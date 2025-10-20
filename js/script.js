@@ -25,44 +25,73 @@ document.addEventListener('DOMContentLoaded', function(){
   // API URL
   const API_URL = '/.netlify/functions/api';
   
-  // Store con API
+  // Store con API mejorado
   const store = {
     async read() {
       try {
-        const response = await fetch(`${API_URL}/data`);
-        if (!response.ok) throw new Error('Error al cargar datos');
-        return await response.json();
+        console.log('📡 Leyendo datos de Firebase...');
+        const response = await fetch(`${API_URL}/data`, {
+          method: 'GET',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache'
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('✅ Datos leídos de Firebase:', data);
+        
+        // Guardar en localStorage como backup
+        localStorage.setItem('3t-data', JSON.stringify(data));
+        
+        return data;
       } catch (error) {
-        console.error('Error reading from API:', error);
+        console.error('❌ Error leyendo de Firebase:', error);
+        // Fallback a localStorage
         try {
-          return JSON.parse(localStorage.getItem('3t-data') || '{}');
+          const localData = JSON.parse(localStorage.getItem('3t-data') || '{}');
+          console.log('📦 Usando datos de localStorage como fallback');
+          return localData;
         } catch (e) {
-          return {};
+          console.error('❌ Error leyendo localStorage:', e);
+          return { players: [], matches: [] };
         }
       }
     },
+    
     async write(d) {
       try {
+        console.log('💾 Guardando datos en Firebase...', d);
         const response = await fetch(`${API_URL}/data`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json'
+          },
           body: JSON.stringify(d)
         });
-        if (!response.ok) throw new Error('Error al guardar datos');
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('✅ Datos guardados en Firebase:', result);
+        
+        // Guardar también en localStorage
         localStorage.setItem('3t-data', JSON.stringify(d));
+        
+        return result;
       } catch (error) {
-        console.error('Error writing to API:', error);
+        console.error('❌ Error guardando en Firebase:', error);
+        // Guardar en localStorage al menos
         localStorage.setItem('3t-data', JSON.stringify(d));
+        throw error;
       }
     }
-  };
-
-  // Generar avatar con iniciales (fallback)
-  const getAvatar = (name) => {
-    const colors = ['FF6B6B','4ECDC4','45B7D1','96CEB4','FFEAA7','DFE6E9','74B9FF','A29BFE','FD79A8','FDCB6E'];
-    const initial = name.charAt(0).toUpperCase();
-    const colorIndex = name.charCodeAt(0) % colors.length;
-    return `https://ui-avatars.com/api/?name=${encodeURIComponent(initial)}&size=200&background=${colors[colorIndex]}&color=fff&bold=true&font-size=0.5`;
   };
 
   let data = { players: [], matches: [] };
@@ -72,24 +101,33 @@ document.addEventListener('DOMContentLoaded', function(){
   // Cargar datos iniciales
   async function loadData() {
     try {
-      // Primero cargar desde localStorage (instantáneo)
-      const localData = JSON.parse(localStorage.getItem('3t-data') || '{}');
+      console.log('🚀 Iniciando carga de datos...');
       
-      if (localData.players && localData.players.length > 0) {
-        // Usar datos locales inmediatamente
-        data = localData;
-        console.log('Datos cargados desde localStorage');
+      // Intentar cargar desde Firebase primero
+      const firebaseData = await store.read();
+      
+      if (firebaseData && firebaseData.players) {
+        console.log('✅ Datos cargados desde Firebase');
+        data = firebaseData;
       } else {
-        // Si no hay datos locales, inicializar con RAW_PLAYERS
+        console.log('⚠️ Firebase vacío, inicializando con jugadores por defecto');
+        // Firebase vacío, inicializar con RAW_PLAYERS
         data = { 
-          players: RAW_PLAYERS.map(p=>({ id: genId(), name: p.name, photo: p.photo })), 
+          players: RAW_PLAYERS.map(p=>({ 
+            id: genId(), 
+            name: p.name, 
+            photo: p.photo 
+          })), 
           matches: [] 
         };
-        localStorage.setItem('3t-data', JSON.stringify(data));
-        console.log('Datos inicializados localmente');
+        
+        // Subir datos iniciales a Firebase
+        await store.write(data);
+        console.log('✅ Datos iniciales subidos a Firebase');
       }
       
-      // Actualizar jugadores con RAW_PLAYERS por si hay nuevos
+      // Sincronizar jugadores con RAW_PLAYERS (por si hay nuevos)
+      let updated = false;
       RAW_PLAYERS.forEach(rawPlayer => {
         const exists = data.players.find(p => p.name === rawPlayer.name);
         if (!exists) {
@@ -98,26 +136,34 @@ document.addEventListener('DOMContentLoaded', function(){
             name: rawPlayer.name,
             photo: rawPlayer.photo
           });
-        } else {
+          updated = true;
+        } else if (exists.photo !== rawPlayer.photo) {
           exists.photo = rawPlayer.photo;
+          updated = true;
         }
       });
       
-      data.players.sort((a, b) => a.name.localeCompare(b.name, 'es'));
+      if (updated) {
+        data.players.sort((a, b) => a.name.localeCompare(b.name, 'es'));
+        await store.write(data);
+        console.log('✅ Jugadores actualizados');
+      }
+      
       data.players.forEach(p => teamStates[p.id] = 'none');
       
-      // Renderizar inmediatamente con datos locales
+      // Renderizar
       renderLeaderboard();
       renderHistory();
       
-      // En segundo plano, intentar sincronizar con Firebase
-      syncWithFirebase();
-      
     } catch (error) {
-      console.error('Error loading data:', error);
+      console.error('❌ Error crítico cargando datos:', error);
       // Fallback: inicializar con RAW_PLAYERS
       data = { 
-        players: RAW_PLAYERS.map(p=>({ id: genId(), name: p.name, photo: p.photo })), 
+        players: RAW_PLAYERS.map(p=>({ 
+          id: genId(), 
+          name: p.name, 
+          photo: p.photo 
+        })), 
         matches: [] 
       };
       data.players.forEach(p => teamStates[p.id] = 'none');
@@ -125,41 +171,21 @@ document.addEventListener('DOMContentLoaded', function(){
       renderHistory();
     }
   }
-  
-  // Sincronizar con Firebase en segundo plano
-  async function syncWithFirebase() {
+
+  // Auto-refresh cada 10 segundos (aumentado para no saturar)
+  let refreshInterval = setInterval(async () => {
     try {
-      console.log('Sincronizando con Firebase...');
-      const savedData = await store.read();
-      
-      if (!savedData.players || savedData.players.length === 0) {
-        // Firebase vacío, subir datos locales
-        console.log('Firebase vacío, subiendo datos locales...');
-        await store.write(data);
-      } else {
-        // Firebase tiene datos, usarlos
-        if (JSON.stringify(savedData) !== JSON.stringify(data)) {
-          console.log('Datos de Firebase diferentes, actualizando...');
-          data = savedData;
-          renderLeaderboard();
-          renderHistory();
-        }
+      const newData = await store.read();
+      if (JSON.stringify(newData.matches) !== JSON.stringify(data.matches)) {
+        console.log('🔄 Cambios detectados, actualizando...');
+        data = newData;
+        renderLeaderboard();
+        renderHistory();
       }
     } catch (error) {
-      console.error('Error sincronizando con Firebase:', error);
-      // Ignorar error, seguir usando datos locales
+      console.error('❌ Error en auto-refresh:', error);
     }
-  }
-
-  // Auto-refresh cada 5 segundos
-  setInterval(async () => {
-    const newData = await store.read();
-    if (JSON.stringify(newData.matches) !== JSON.stringify(data.matches)) {
-      data = newData;
-      renderLeaderboard();
-      renderHistory();
-    }
-  }, 5000);
+  }, 10000);
 
   // ---- DnD y Render del Pool --------------------------------------------
   function getTeamStatus(playerId) {
@@ -354,10 +380,17 @@ document.addEventListener('DOMContentLoaded', function(){
   }
 
   async function eliminarPartido(id){ 
-    data.matches = data.matches.filter(m=>m.id!==id); 
-    await store.write(data); 
-    renderHistory(); 
-    renderLeaderboard(); 
+    try {
+      console.log('🗑️ Eliminando partido:', id);
+      data.matches = data.matches.filter(m=>m.id!==id); 
+      await store.write(data); 
+      console.log('✅ Partido eliminado');
+      renderHistory(); 
+      renderLeaderboard(); 
+    } catch (error) {
+      console.error('❌ Error eliminando partido:', error);
+      alert('Error al eliminar el partido. Intentá de nuevo.');
+    }
   }
 
   function renderHistory(){
@@ -396,11 +429,38 @@ document.addEventListener('DOMContentLoaded', function(){
 
   async function onGuardarPartido(){
     const date=$('#fecha').value||today();
-    if(current.A.length<1||current.B.length<1){alert('Arrastrá jugadores a ambos equipos');return;}
-    if(!winner){alert('Seleccioná el ganador');return;}
-    data.matches.push({id:genId(),date,teamA:[...current.A],teamB:[...current.B],winner});
-    await store.write(data);
-    limpiar(); renderHistory(); renderLeaderboard();
+    if(current.A.length<1||current.B.length<1){
+      alert('Arrastrá jugadores a ambos equipos');
+      return;
+    }
+    if(!winner){
+      alert('Seleccioná el ganador');
+      return;
+    }
+    
+    try {
+      console.log('💾 Guardando partido...');
+      const newMatch = {
+        id: genId(),
+        date,
+        teamA: [...current.A],
+        teamB: [...current.B],
+        winner
+      };
+      
+      data.matches.push(newMatch);
+      await store.write(data);
+      console.log('✅ Partido guardado exitosamente');
+      
+      limpiar(); 
+      renderHistory(); 
+      renderLeaderboard();
+      
+      alert('✅ Partido guardado correctamente');
+    } catch (error) {
+      console.error('❌ Error guardando partido:', error);
+      alert('❌ Error al guardar el partido. Revisá la consola para más detalles.');
+    }
   }
 
   function limpiar(){
@@ -446,7 +506,7 @@ document.addEventListener('DOMContentLoaded', function(){
       authError.style.display = 'none';
       checkAuth();
       renderHistory();
-      renderAll(); // Renderizar todo cuando hace login
+      renderAll();
     } else {
       authError.style.display = 'block';
       passwordInput.value = '';
@@ -465,9 +525,8 @@ document.addEventListener('DOMContentLoaded', function(){
   
   authBtn.addEventListener('click', attemptLogin);
   
-  // Cargar datos al iniciar (ANTES de cualquier cosa)
+  // Cargar datos al iniciar
   loadData();
-  
   checkAuth();
   
   setupDrop('#zoneA','A'); 
@@ -500,7 +559,12 @@ document.addEventListener('DOMContentLoaded', function(){
   function closeDeleteModal(){ pendingDeleteId = null; modal.classList.remove('show'); }
 
   btnCancel.addEventListener('click', closeDeleteModal);
-  btnConfirm.addEventListener('click', async ()=>{ if(pendingDeleteId){ await eliminarPartido(pendingDeleteId); } closeDeleteModal(); });
+  btnConfirm.addEventListener('click', async ()=>{ 
+    if(pendingDeleteId){ 
+      await eliminarPartido(pendingDeleteId); 
+    } 
+    closeDeleteModal(); 
+  });
   modal.addEventListener('click', (e)=>{ if(e.target===modal) closeDeleteModal(); });
   document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeDeleteModal(); });
 });
