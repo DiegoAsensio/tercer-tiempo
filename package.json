@@ -1,0 +1,8 @@
+{
+  "name": "3t-futbol",
+  "version": "1.0.0",
+  "description": "Anotador de partidos de fútbol",
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  }
+}
