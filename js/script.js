@@ -22,6 +22,41 @@ document.addEventListener('DOMContentLoaded', function(){
   const genId = ()=> (window.crypto && typeof window.crypto.randomUUID==='function' ? window.crypto.randomUUID() : Math.random().toString(36).slice(2));
   const formatDateDMY = (date)=>{ const [y,m,d] = date.split('-'); return `${d}-${m}-${y}` };
   
+  // API URL
+  const API_URL = '/.netlify/functions/api';
+  
+  // Store con API
+  const store = {
+    async read() {
+      try {
+        const response = await fetch(`${API_URL}/data`);
+        if (!response.ok) throw new Error('Error al cargar datos');
+        return await response.json();
+      } catch (error) {
+        console.error('Error reading from API:', error);
+        try {
+          return JSON.parse(localStorage.getItem('3t-data') || '{}');
+        } catch (e) {
+          return {};
+        }
+      }
+    },
+    async write(d) {
+      try {
+        const response = await fetch(`${API_URL}/data`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(d)
+        });
+        if (!response.ok) throw new Error('Error al guardar datos');
+        localStorage.setItem('3t-data', JSON.stringify(d));
+      } catch (error) {
+        console.error('Error writing to API:', error);
+        localStorage.setItem('3t-data', JSON.stringify(d));
+      }
+    }
+  };
+
   // Generar avatar con iniciales (fallback)
   const getAvatar = (name) => {
     const colors = ['FF6B6B','4ECDC4','45B7D1','96CEB4','FFEAA7','DFE6E9','74B9FF','A29BFE','FD79A8','FDCB6E'];
@@ -30,53 +65,53 @@ document.addEventListener('DOMContentLoaded', function(){
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(initial)}&size=200&background=${colors[colorIndex]}&color=fff&bold=true&font-size=0.5`;
   };
 
-  const store = {
-    read(){ try{return JSON.parse(localStorage.getItem('3t-data')||'{}')}catch(e){return{}} },
-    write(d){ localStorage.setItem('3t-data', JSON.stringify(d)) }
-  };
+  let data = { players: [], matches: [] };
+  const current = {A:[],B:[]};
+  const teamStates = {};
 
-  // Leer datos existentes o inicializar
-  let savedData = store.read();
-  let data;
-  
-  if (!savedData.players || savedData.players.length === 0) {
-    // Primera vez: inicializar con todos los jugadores
-    data = { 
-      players: RAW_PLAYERS.map(p=>({ id: genId(), name: p.name, photo: p.photo })), 
-      matches: [] 
-    };
-    store.write(data);
-  } else {
-    // Ya hay datos guardados
-    data = savedData;
+  // Cargar datos iniciales
+  async function loadData() {
+    const savedData = await store.read();
     
-    // Actualizar/agregar jugadores nuevos que no existen
-    RAW_PLAYERS.forEach(rawPlayer => {
-      const exists = data.players.find(p => p.name === rawPlayer.name);
-      if (!exists) {
-        // Agregar jugador nuevo (como Nahue)
-        data.players.push({
-          id: genId(),
-          name: rawPlayer.name,
-          photo: rawPlayer.photo
-        });
-      } else {
-        // Actualizar la foto del jugador existente
-        exists.photo = rawPlayer.photo;
-      }
-    });
+    if (!savedData.players || savedData.players.length === 0) {
+      data = { 
+        players: RAW_PLAYERS.map(p=>({ id: genId(), name: p.name, photo: p.photo })), 
+        matches: [] 
+      };
+      await store.write(data);
+    } else {
+      data = savedData;
+      
+      RAW_PLAYERS.forEach(rawPlayer => {
+        const exists = data.players.find(p => p.name === rawPlayer.name);
+        if (!exists) {
+          data.players.push({
+            id: genId(),
+            name: rawPlayer.name,
+            photo: rawPlayer.photo
+          });
+        } else {
+          exists.photo = rawPlayer.photo;
+        }
+      });
+      
+      data.players.sort((a, b) => a.name.localeCompare(b.name, 'es'));
+      await store.write(data);
+    }
     
-    // Ordenar jugadores alfabéticamente
-    data.players.sort((a, b) => a.name.localeCompare(b.name, 'es'));
-    
-    store.write(data);
+    data.players.forEach(p => teamStates[p.id] = 'none');
+    renderAll();
   }
 
-  const current = {A:[],B:[]};
-
-  // Estados de equipo para cada jugador (para mobile selector)
-  const teamStates = {}; // {playerId: 'none'|'A'|'B'}
-  data.players.forEach(p => teamStates[p.id] = 'none');
+  // Auto-refresh cada 5 segundos
+  setInterval(async () => {
+    const newData = await store.read();
+    if (JSON.stringify(newData.matches) !== JSON.stringify(data.matches)) {
+      data = newData;
+      renderLeaderboard();
+      renderHistory();
+    }
+  }, 5000);
 
   // ---- DnD y Render del Pool --------------------------------------------
   function getTeamStatus(playerId) {
@@ -101,11 +136,9 @@ document.addEventListener('DOMContentLoaded', function(){
     
     const newStatus = statuses[newIndex];
     
-    // Remover de ambos equipos
     current.A = current.A.filter(x => x !== playerId);
     current.B = current.B.filter(x => x !== playerId);
     
-    // Agregar al nuevo equipo
     if (newStatus === 'pechera') {
       current.A.push(playerId);
     } else if (newStatus === 'sin-pechera') {
@@ -119,7 +152,6 @@ document.addEventListener('DOMContentLoaded', function(){
   function makePlayerCard(p){
     const el = document.createElement('div'); 
     el.className='player'; 
-    // Solo draggable en desktop
     el.draggable = window.innerWidth > 768; 
     el.dataset.id = p.id;
     
@@ -138,7 +170,6 @@ document.addEventListener('DOMContentLoaded', function(){
     nm.className='name'; 
     nm.textContent = p.name;
     
-    // Team selector para mobile
     const selector = document.createElement('div');
     selector.className = 'team-selector';
     
@@ -170,7 +201,6 @@ document.addEventListener('DOMContentLoaded', function(){
     el.appendChild(nm);
     el.appendChild(selector);
     
-    // Solo eventos drag en desktop
     if (window.innerWidth > 768) {
       el.addEventListener('dragstart', e=>{ 
         el.classList.add('dragging'); 
@@ -186,11 +216,9 @@ document.addEventListener('DOMContentLoaded', function(){
     const pool = $('#pool'); pool.innerHTML='';
     const unassigned = data.players.filter(p=> !current.A.includes(p.id) && !current.B.includes(p.id));
     
-    // En mobile, mostrar todos los jugadores con su selector
     if (window.innerWidth <= 768) {
       data.players.forEach(p=> pool.appendChild(makePlayerCard(p)));
     } else {
-      // En desktop, solo los no asignados
       if(!unassigned.length){ 
         pool.innerHTML = `<div class="empty">No quedan jugadores libres. Arrastrá desde las zonas o sacá de un equipo con ✖.</div>`; 
         return 
@@ -277,9 +305,9 @@ document.addEventListener('DOMContentLoaded', function(){
     }).join('') 
   }
 
-  function eliminarPartido(id){ 
+  async function eliminarPartido(id){ 
     data.matches = data.matches.filter(m=>m.id!==id); 
-    store.write(data); 
+    await store.write(data); 
     renderHistory(); 
     renderLeaderboard(); 
   }
@@ -318,12 +346,12 @@ document.addEventListener('DOMContentLoaded', function(){
     }
   }
 
-  function onGuardarPartido(){
+  async function onGuardarPartido(){
     const date=$('#fecha').value||today();
     if(current.A.length<1||current.B.length<1){alert('Arrastrá jugadores a ambos equipos');return;}
     if(!winner){alert('Seleccioná el ganador');return;}
     data.matches.push({id:genId(),date,teamA:[...current.A],teamB:[...current.B],winner});
-    store.write(data);
+    await store.write(data);
     limpiar(); renderHistory(); renderLeaderboard();
   }
 
@@ -369,7 +397,7 @@ document.addEventListener('DOMContentLoaded', function(){
       passwordInput.value = '';
       authError.style.display = 'none';
       checkAuth();
-      renderHistory(); // Re-render para mostrar botones de eliminar
+      renderHistory();
     } else {
       authError.style.display = 'block';
       passwordInput.value = '';
@@ -395,7 +423,6 @@ document.addEventListener('DOMContentLoaded', function(){
   document.getElementById('guardarPartido').addEventListener('click', onGuardarPartido);
   document.getElementById('limpiarEquipos').addEventListener('click', limpiar);
 
-  // Re-render en resize para mobile/desktop
   let resizeTimer;
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
@@ -404,7 +431,6 @@ document.addEventListener('DOMContentLoaded', function(){
     }, 250);
   });
 
-  // Winner segmented control
   let winner = null;
   const seg = document.getElementById('segWinner');
   seg.addEventListener('click', (e)=>{
@@ -413,7 +439,6 @@ document.addEventListener('DOMContentLoaded', function(){
     seg.querySelectorAll('button').forEach(b=> b.classList.toggle('active', b===btn));
   });
 
-  // Modal logic
   let pendingDeleteId = null;
   const modal = document.getElementById('deleteModal');
   const btnCancel = document.getElementById('cancelDelete');
@@ -423,10 +448,10 @@ document.addEventListener('DOMContentLoaded', function(){
   function closeDeleteModal(){ pendingDeleteId = null; modal.classList.remove('show'); }
 
   btnCancel.addEventListener('click', closeDeleteModal);
-  btnConfirm.addEventListener('click', ()=>{ if(pendingDeleteId){ eliminarPartido(pendingDeleteId); } closeDeleteModal(); });
+  btnConfirm.addEventListener('click', async ()=>{ if(pendingDeleteId){ await eliminarPartido(pendingDeleteId); } closeDeleteModal(); });
   modal.addEventListener('click', (e)=>{ if(e.target===modal) closeDeleteModal(); });
   document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeDeleteModal(); });
 
-  // Final: render
-  renderAll();
+  // Cargar datos al iniciar
+  loadData();
 });
