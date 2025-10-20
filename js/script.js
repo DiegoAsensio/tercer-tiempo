@@ -71,36 +71,51 @@ document.addEventListener('DOMContentLoaded', function(){
 
   // Cargar datos iniciales
   async function loadData() {
-    const savedData = await store.read();
-    
-    if (!savedData.players || savedData.players.length === 0) {
+    try {
+      const savedData = await store.read();
+      
+      if (!savedData.players || savedData.players.length === 0) {
+        console.log('No hay jugadores, inicializando...');
+        data = { 
+          players: RAW_PLAYERS.map(p=>({ id: genId(), name: p.name, photo: p.photo })), 
+          matches: [] 
+        };
+        await store.write(data);
+        console.log('Jugadores inicializados:', data.players.length);
+      } else {
+        data = savedData;
+        
+        RAW_PLAYERS.forEach(rawPlayer => {
+          const exists = data.players.find(p => p.name === rawPlayer.name);
+          if (!exists) {
+            data.players.push({
+              id: genId(),
+              name: rawPlayer.name,
+              photo: rawPlayer.photo
+            });
+          } else {
+            exists.photo = rawPlayer.photo;
+          }
+        });
+        
+        data.players.sort((a, b) => a.name.localeCompare(b.name, 'es'));
+        await store.write(data);
+      }
+      
+      data.players.forEach(p => teamStates[p.id] = 'none');
+      renderLeaderboard();
+      renderHistory();
+    } catch (error) {
+      console.error('Error loading data:', error);
+      // Fallback: usar datos locales o inicializar vacío
       data = { 
         players: RAW_PLAYERS.map(p=>({ id: genId(), name: p.name, photo: p.photo })), 
         matches: [] 
       };
-      await store.write(data);
-    } else {
-      data = savedData;
-      
-      RAW_PLAYERS.forEach(rawPlayer => {
-        const exists = data.players.find(p => p.name === rawPlayer.name);
-        if (!exists) {
-          data.players.push({
-            id: genId(),
-            name: rawPlayer.name,
-            photo: rawPlayer.photo
-          });
-        } else {
-          exists.photo = rawPlayer.photo;
-        }
-      });
-      
-      data.players.sort((a, b) => a.name.localeCompare(b.name, 'es'));
-      await store.write(data);
+      data.players.forEach(p => teamStates[p.id] = 'none');
+      renderLeaderboard();
+      renderHistory();
     }
-    
-    data.players.forEach(p => teamStates[p.id] = 'none');
-    renderAll();
   }
 
   // Auto-refresh cada 5 segundos
