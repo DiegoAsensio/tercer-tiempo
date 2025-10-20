@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>3Âºt – Anotador de partidos</title>
+  <link rel="icon" href="img/logo.png" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="top">
+    <img id="logo" src="https://ui-avatars.com/api/?name=3T&size=128&background=2b6cf6&color=fff&bold=true&font-size=0.5" alt="3Âºt" />
+  </header>
+
+  <div class="container">
+    <!-- Card de autenticación -->
+    <section class="card" id="auth-card" style="margin-bottom:16px">
+      <header><h2>Cargar partido</h2></header>
+      <div class="content">
+        <div style="display:flex;gap:8px;align-items:center;max-width:400px">
+          <input type="text" id="admin-password" placeholder="Contraseña" style="flex:1;padding:10px 12px;border:1px solid var(--line);border-radius:10px;color:var(--ink);background:#0b1433;font-size:1rem" />
+          <button id="auth-btn" class="btn" style="padding:10px 16px">▶</button>
+        </div>
+        <p id="auth-error" class="muted" style="margin-top:8px;font-size:0.85rem;display:none;color:#ff6b6b">❌ Código incorrecto</p>
+        <p class="muted" style="margin-top:8px;font-size:0.85rem">Ingresá la contraseña para acceder al modo admin</p>
+      </div>
+    </section>
+
+    <section class="card builder" id="builder-card" style="display:none">
+      <header><h2>Armar equipos</h2></header>
+      <div class="content">
+        <div class="row" style="gap:12px; margin-bottom:12px">
+          <label class="muted">Fecha</label>
+          <input id="fecha" type="date" style="max-width:220px" />
+        </div>
+        <div class="pool" id="pool"></div>
+        <div class="zones" style="margin-top:14px">
+          <div class="zone" id="zoneA">
+            <h3>Pechera (<span id="countA">0</span>)</h3>
+            <div id="slotsA"></div>
+          </div>
+          <div class="zone" id="zoneB">
+            <h3>Sin pechera (<span id="countB">0</span>)</h3>
+            <div id="slotsB"></div>
+          </div>
+        </div>
+        <div class="winner">
+          <span class="label">Ganador:</span>
+          <div class="segmented" id="segWinner">
+            <button type="button" data-v="A">Pechera</button>
+            <button type="button" data-v="B">Sin pechera</button>
+          </div>
+          <div class="actions-row">
+            <button class="btn good" id="guardarPartido">Guardar partido</button>
+            <button class="btn" id="limpiarEquipos">Limpiar</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="lower">
+      <section class="card">
+        <header><h2>Tabla general</h2></header>
+        <div class="content">
+          <table id="tablaPuntos">
+            <thead><tr><th>#</th><th>Jugador</th><th class="muted">PJ</th><th>PG</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <header><h2>Historial de partidos</h2></header>
+        <div class="content" id="historial"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Modal eliminar -->
+  <div class="modal-backdrop" id="deleteModal">
+    <div class="modal">
+      <header><h3>Eliminar partido</h3></header>
+      <div class="content">
+        <p>¿Seguro que querés eliminar este registro? Esta acción no se puede deshacer.</p>
+      </div>
+      <div class="actions">
+        <button class="btn" id="cancelDelete">Cancelar</button>
+        <button class="btn danger" id="confirmDelete">Eliminar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/script.js"></script>
+</body>
+</html>
