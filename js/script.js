@@ -72,42 +72,50 @@ document.addEventListener('DOMContentLoaded', function(){
   // Cargar datos iniciales
   async function loadData() {
     try {
-      const savedData = await store.read();
+      // Primero cargar desde localStorage (instantáneo)
+      const localData = JSON.parse(localStorage.getItem('3t-data') || '{}');
       
-      if (!savedData.players || savedData.players.length === 0) {
-        console.log('No hay jugadores, inicializando...');
+      if (localData.players && localData.players.length > 0) {
+        // Usar datos locales inmediatamente
+        data = localData;
+        console.log('Datos cargados desde localStorage');
+      } else {
+        // Si no hay datos locales, inicializar con RAW_PLAYERS
         data = { 
           players: RAW_PLAYERS.map(p=>({ id: genId(), name: p.name, photo: p.photo })), 
           matches: [] 
         };
-        await store.write(data);
-        console.log('Jugadores inicializados:', data.players.length);
-      } else {
-        data = savedData;
-        
-        RAW_PLAYERS.forEach(rawPlayer => {
-          const exists = data.players.find(p => p.name === rawPlayer.name);
-          if (!exists) {
-            data.players.push({
-              id: genId(),
-              name: rawPlayer.name,
-              photo: rawPlayer.photo
-            });
-          } else {
-            exists.photo = rawPlayer.photo;
-          }
-        });
-        
-        data.players.sort((a, b) => a.name.localeCompare(b.name, 'es'));
-        await store.write(data);
+        localStorage.setItem('3t-data', JSON.stringify(data));
+        console.log('Datos inicializados localmente');
       }
       
+      // Actualizar jugadores con RAW_PLAYERS por si hay nuevos
+      RAW_PLAYERS.forEach(rawPlayer => {
+        const exists = data.players.find(p => p.name === rawPlayer.name);
+        if (!exists) {
+          data.players.push({
+            id: genId(),
+            name: rawPlayer.name,
+            photo: rawPlayer.photo
+          });
+        } else {
+          exists.photo = rawPlayer.photo;
+        }
+      });
+      
+      data.players.sort((a, b) => a.name.localeCompare(b.name, 'es'));
       data.players.forEach(p => teamStates[p.id] = 'none');
+      
+      // Renderizar inmediatamente con datos locales
       renderLeaderboard();
       renderHistory();
+      
+      // En segundo plano, intentar sincronizar con Firebase
+      syncWithFirebase();
+      
     } catch (error) {
       console.error('Error loading data:', error);
-      // Fallback: usar datos locales o inicializar vacío
+      // Fallback: inicializar con RAW_PLAYERS
       data = { 
         players: RAW_PLAYERS.map(p=>({ id: genId(), name: p.name, photo: p.photo })), 
         matches: [] 
@@ -115,6 +123,31 @@ document.addEventListener('DOMContentLoaded', function(){
       data.players.forEach(p => teamStates[p.id] = 'none');
       renderLeaderboard();
       renderHistory();
+    }
+  }
+  
+  // Sincronizar con Firebase en segundo plano
+  async function syncWithFirebase() {
+    try {
+      console.log('Sincronizando con Firebase...');
+      const savedData = await store.read();
+      
+      if (!savedData.players || savedData.players.length === 0) {
+        // Firebase vacío, subir datos locales
+        console.log('Firebase vacío, subiendo datos locales...');
+        await store.write(data);
+      } else {
+        // Firebase tiene datos, usarlos
+        if (JSON.stringify(savedData) !== JSON.stringify(data)) {
+          console.log('Datos de Firebase diferentes, actualizando...');
+          data = savedData;
+          renderLeaderboard();
+          renderHistory();
+        }
+      }
+    } catch (error) {
+      console.error('Error sincronizando con Firebase:', error);
+      // Ignorar error, seguir usando datos locales
     }
   }
 
@@ -413,6 +446,7 @@ document.addEventListener('DOMContentLoaded', function(){
       authError.style.display = 'none';
       checkAuth();
       renderHistory();
+      renderAll(); // Renderizar todo cuando hace login
     } else {
       authError.style.display = 'block';
       passwordInput.value = '';
@@ -430,6 +464,9 @@ document.addEventListener('DOMContentLoaded', function(){
   });
   
   authBtn.addEventListener('click', attemptLogin);
+  
+  // Cargar datos al iniciar (ANTES de cualquier cosa)
+  loadData();
   
   checkAuth();
   
@@ -466,7 +503,4 @@ document.addEventListener('DOMContentLoaded', function(){
   btnConfirm.addEventListener('click', async ()=>{ if(pendingDeleteId){ await eliminarPartido(pendingDeleteId); } closeDeleteModal(); });
   modal.addEventListener('click', (e)=>{ if(e.target===modal) closeDeleteModal(); });
   document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeDeleteModal(); });
-
-  // Cargar datos al iniciar
-  loadData();
 });
