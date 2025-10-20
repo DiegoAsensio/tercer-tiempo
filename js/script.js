@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', function(){
     { name: 'Diego', photo: 'img/diego.jpg' },
     { name: 'Gata', photo: 'img/gata.jpg' },
     { name: 'Joaco', photo: 'img/joaco.jpg' },
-    { name: 'Joaquin', photo: 'img/joaquin.jpg' },
+    { name: 'Aldrey', photo: 'img/aldrey.jpg' },
     { name: 'Molfi', photo: 'img/molfi.jpg' },
     { name: 'Nacho', photo: 'img/nacho.jpg' },
     { name: 'Nahue', photo: 'img/nahue.jpg' },
@@ -35,9 +35,42 @@ document.addEventListener('DOMContentLoaded', function(){
     write(d){ localStorage.setItem('3t-data', JSON.stringify(d)) }
   };
 
-  // Inicializar con la nueva lista usando las fotos reales
-  let data = { players: RAW_PLAYERS.map(p=>({ id: genId(), name: p.name, photo: p.photo })), matches: [] };
-  store.write(data);
+  // Leer datos existentes o inicializar
+  let savedData = store.read();
+  let data;
+  
+  if (!savedData.players || savedData.players.length === 0) {
+    // Primera vez: inicializar con todos los jugadores
+    data = { 
+      players: RAW_PLAYERS.map(p=>({ id: genId(), name: p.name, photo: p.photo })), 
+      matches: [] 
+    };
+    store.write(data);
+  } else {
+    // Ya hay datos guardados
+    data = savedData;
+    
+    // Actualizar/agregar jugadores nuevos que no existen
+    RAW_PLAYERS.forEach(rawPlayer => {
+      const exists = data.players.find(p => p.name === rawPlayer.name);
+      if (!exists) {
+        // Agregar jugador nuevo (como Nahue)
+        data.players.push({
+          id: genId(),
+          name: rawPlayer.name,
+          photo: rawPlayer.photo
+        });
+      } else {
+        // Actualizar la foto del jugador existente
+        exists.photo = rawPlayer.photo;
+      }
+    });
+    
+    // Ordenar jugadores alfabéticamente
+    data.players.sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    
+    store.write(data);
+  }
 
   const current = {A:[],B:[]};
 
@@ -231,7 +264,7 @@ document.addEventListener('DOMContentLoaded', function(){
     const rows=computeStats().sort((a,b)=>b.pg-a.pg||a.name.localeCompare(b.name,'es')).map((s,i)=>{
       const img = avatarImg(s.id);
       const name = s.name;
-      return `<tr><td>${i+1}</td><td style='display:flex;align-items:center;gap:8px'><img src='${img}' alt='${name}' title='${name}' style='height:26px;width:26px;border-radius:7px;object-fit:cover' onerror="this.style.display='none'">${name}</td><td>${s.pj}</td><td><strong>${s.pg}</strong></td></tr>`;
+      return `<tr><td>${i+1}</td><td style='display:flex;align-items:center;gap:12px'><img src='${img}' alt='${name}' title='${name}' style='height:48px;width:48px;border-radius:7px;object-fit:cover;border:2px solid var(--line)' onerror="this.style.display='none'">${name}</td><td>${s.pj}</td><td><strong>${s.pg}</strong></td></tr>`;
     }).join('');
     tbody.innerHTML=rows||`<tr><td colspan='4' class='empty'>Sin partidos todavía</td></tr>`;
   }
