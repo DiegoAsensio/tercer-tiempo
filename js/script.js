@@ -22,7 +22,9 @@ document.addEventListener('DOMContentLoaded', function(){
   const genId = ()=> (window.crypto && typeof window.crypto.randomUUID==='function' ? window.crypto.randomUUID() : Math.random().toString(36).slice(2));
   const formatDateDMY = (date)=>{ const [y,m,d] = date.split('-'); return `${d}-${m}-${y}` };
   
-
+  // Generar ID consistente desde el nombre del jugador
+  const playerIdFromName = (name) => 'player-' + name.toLowerCase().replace(/\s+/g, '-');
+  
   const SHEETDB_URL = 'https://sheetdb.io/api/v1/ukwjhvgcp5ec9';
   
   // Store con SheetDB
@@ -67,12 +69,6 @@ document.addEventListener('DOMContentLoaded', function(){
     },
     
     parseSheetData(rows) {
-      // Formato esperado en Google Sheets:
-      // Columna A: id
-      // Columna B: date
-      // Columna C: teamA (JSON string con array de IDs)
-      // Columna D: teamB (JSON string con array de IDs)
-      // Columna E: winner
       
       const matches = rows.map(row => {
         try {
@@ -91,7 +87,7 @@ document.addEventListener('DOMContentLoaded', function(){
       
       return {
         players: RAW_PLAYERS.map(p => ({
-          id: genId(),
+          id: playerIdFromName(p.name),
           name: p.name,
           photo: p.photo
         })),
@@ -166,7 +162,7 @@ document.addEventListener('DOMContentLoaded', function(){
         console.log('⚠️ Inicializando con jugadores por defecto');
         data = { 
           players: RAW_PLAYERS.map(p=>({ 
-            id: genId(), 
+            id: playerIdFromName(p.name), 
             name: p.name, 
             photo: p.photo 
           })), 
@@ -184,7 +180,7 @@ document.addEventListener('DOMContentLoaded', function(){
       console.error('❌ Error crítico cargando datos:', error);
       data = { 
         players: RAW_PLAYERS.map(p=>({ 
-          id: genId(), 
+          id: playerIdFromName(p.name), 
           name: p.name, 
           photo: p.photo 
         })), 
@@ -211,7 +207,7 @@ document.addEventListener('DOMContentLoaded', function(){
     }
   }, 30000);
 
-  // ---- DnD y Render del Pool --------------------------------------------
+  // ---- DnD y Render del Pool 
   function getTeamStatus(playerId) {
     if (current.A.includes(playerId)) return 'pechera';
     if (current.B.includes(playerId)) return 'sin-pechera';
@@ -373,7 +369,7 @@ document.addEventListener('DOMContentLoaded', function(){
     });
   }
 
-  // ---- Tabla y Historial -------------------------------------------------
+  // ---- Tabla y Historial 
   function computeStats(){
     const stats = new Map(); 
     data.players.forEach(p=> stats.set(p.id,{id:p.id,name:p.name,pj:0,pg:0,pts:0}));
@@ -510,7 +506,7 @@ document.addEventListener('DOMContentLoaded', function(){
     renderTeams(); renderPool();
   }
 
-  // ---- Init ---------------------------------------------------------------
+  // ---- Init 
   function renderAll(){ 
     $('#fecha').value=today(); 
     renderPool(); 
