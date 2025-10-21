@@ -30,6 +30,8 @@ document.addEventListener('DOMContentLoaded', function(){
     async read() {
       try {
         console.log('📡 Leyendo datos de Firebase...');
+        console.log('🔗 URL:', `${API_URL}/data`);
+        
         const response = await fetch(`${API_URL}/data`, {
           method: 'GET',
           headers: { 
@@ -38,12 +40,18 @@ document.addEventListener('DOMContentLoaded', function(){
           }
         });
         
+        console.log('📊 Response status:', response.status);
+        
         if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ Response error:', errorText);
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         
         const data = await response.json();
-        console.log('✅ Datos leídos de Firebase:', data);
+        console.log('✅ Datos leídos de Firebase:');
+        console.log('  - Players:', data.players?.length || 0);
+        console.log('  - Matches:', data.matches?.length || 0);
         
         // Guardar en localStorage como backup
         localStorage.setItem('3t-data', JSON.stringify(data));
@@ -55,6 +63,8 @@ document.addEventListener('DOMContentLoaded', function(){
         try {
           const localData = JSON.parse(localStorage.getItem('3t-data') || '{}');
           console.log('📦 Usando datos de localStorage como fallback');
+          console.log('  - Players:', localData.players?.length || 0);
+          console.log('  - Matches:', localData.matches?.length || 0);
           return localData;
         } catch (e) {
           console.error('❌ Error leyendo localStorage:', e);
@@ -65,7 +75,12 @@ document.addEventListener('DOMContentLoaded', function(){
     
     async write(d) {
       try {
-        console.log('💾 Guardando datos en Firebase...', d);
+        console.log('💾 Guardando datos en Firebase...');
+        console.log('🔗 URL:', `${API_URL}/data`);
+        console.log('📝 Datos a enviar:');
+        console.log('  - Players:', d.players?.length || 0);
+        console.log('  - Matches:', d.matches?.length || 0);
+        
         const response = await fetch(`${API_URL}/data`, {
           method: 'POST',
           headers: { 
@@ -74,19 +89,33 @@ document.addEventListener('DOMContentLoaded', function(){
           body: JSON.stringify(d)
         });
         
+        console.log('📊 Response status:', response.status);
+        
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          const errorText = await response.text();
+          console.error('❌ Response error:', errorText);
+          throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
         }
         
         const result = await response.json();
-        console.log('✅ Datos guardados en Firebase:', result);
+        console.log('✅ Respuesta de Firebase:', result);
         
         // Guardar también en localStorage
         localStorage.setItem('3t-data', JSON.stringify(d));
         
+        // Verificar inmediatamente que se guardó
+        console.log('🔍 Verificando que se guardó correctamente...');
+        const verification = await this.read();
+        console.log('✅ Verificación completada:', {
+          matchesEnviados: d.matches?.length || 0,
+          matchesGuardados: verification.matches?.length || 0,
+          coinciden: d.matches?.length === verification.matches?.length
+        });
+        
         return result;
       } catch (error) {
         console.error('❌ Error guardando en Firebase:', error);
+        console.error('Stack:', error.stack);
         // Guardar en localStorage al menos
         localStorage.setItem('3t-data', JSON.stringify(d));
         throw error;
@@ -382,12 +411,12 @@ document.addEventListener('DOMContentLoaded', function(){
 
   function renderLeaderboard(){
     const tbody=$('#tablaPuntos tbody');
-    const rows=computeStats().sort((a,b)=>b.pg-a.pg||a.name.localeCompare(b.name,'es')).map((s,i)=>{
+    const rows=computeStats().sort((a,b)=>b.pts-a.pts||b.pg-a.pg||a.name.localeCompare(b.name,'es')).map((s,i)=>{
       const img = avatarImg(s.id);
       const name = s.name;
-      return `<tr><td>${i+1}</td><td style='display:flex;align-items:center;gap:12px'><img src='${img}' alt='${name}' title='${name}' style='height:48px;width:48px;border-radius:7px;object-fit:cover;border:2px solid var(--line)' onerror="this.style.display='none'">${name}</td><td>${s.pj}</td><td><strong>${s.pg}</strong></td></tr>`;
+      return `<tr><td>${i+1}</td><td style='display:flex;align-items:center;gap:12px'><img src='${img}' alt='${name}' title='${name}' style='height:48px;width:48px;border-radius:7px;object-fit:cover;border:2px solid var(--line)' onerror="this.style.display='none'">${name}</td><td>${s.pj}</td><td>${s.pg}</td><td><strong>${s.pts}</strong></td></tr>`;
     }).join('');
-    tbody.innerHTML=rows||`<tr><td colspan='4' class='empty'>Sin partidos todavía</td></tr>`;
+    tbody.innerHTML=rows||`<tr><td colspan='5' class='empty'>Sin partidos todavía</td></tr>`;
   }
 
   function miniTeam(ids){ 

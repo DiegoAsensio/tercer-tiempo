@@ -15,9 +15,9 @@ if (!admin.apps.length) {
       databaseURL: `https://${process.env.FIREBASE_PROJECT_ID}-default-rtdb.firebaseio.com`
     });
     
-    console.log('Firebase Admin initialized successfully');
+    console.log('✅ Firebase Admin initialized successfully');
   } catch (error) {
-    console.error('Error initializing Firebase:', error);
+    console.error('❌ Error initializing Firebase:', error);
     throw error;
   }
 }
@@ -29,7 +29,8 @@ exports.handler = async (event, context) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE'
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE',
+    'Content-Type': 'application/json'
   };
 
   // Manejar preflight
@@ -37,17 +38,29 @@ exports.handler = async (event, context) => {
     return { statusCode: 200, headers, body: '' };
   }
 
-  console.log('Request:', event.httpMethod, event.path);
+  const path = event.path.replace('/.netlify/functions/api', '');
+  console.log('📡 Request:', event.httpMethod, path);
 
   try {
-    const path = event.path.replace('/.netlify/functions/api', '');
-
     // GET /data - Obtener todos los datos
     if (event.httpMethod === 'GET' && path === '/data') {
-      console.log('Fetching data from Firebase...');
+      console.log('📖 Leyendo datos de Firebase...');
       const snapshot = await db.ref('futbol').once('value');
-      const data = snapshot.val() || { players: [], matches: [] };
-      console.log('Data fetched successfully');
+      const data = snapshot.val();
+      
+      if (!data) {
+        console.log('⚠️ No hay datos en Firebase, devolviendo estructura vacía');
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({ players: [], matches: [] })
+        };
+      }
+      
+      console.log('✅ Datos leídos:', {
+        players: data.players?.length || 0,
+        matches: data.matches?.length || 0
+      });
       
       return {
         statusCode: 200,
@@ -58,73 +71,82 @@ exports.handler = async (event, context) => {
 
     // POST /data - Guardar/actualizar datos completos
     if (event.httpMethod === 'POST' && path === '/data') {
-      console.log('Saving data to Firebase...');
+      console.log('💾 Guardando datos en Firebase...');
+      
+      if (!event.body) {
+        throw new Error('No se recibió body en la petición');
+      }
+      
       const data = JSON.parse(event.body);
+      
+      console.log('📝 Datos a guardar:', {
+        players: data.players?.length || 0,
+        matches: data.matches?.length || 0
+      });
+      
+      // Validar estructura básica
+      if (!data.players || !Array.isArray(data.players)) {
+        throw new Error('Estructura de datos inválida: players debe ser un array');
+      }
+      if (!data.matches || !Array.isArray(data.matches)) {
+        throw new Error('Estructura de datos inválida: matches debe ser un array');
+      }
+      
+      // Guardar en Firebase
       await db.ref('futbol').set(data);
-      console.log('Data saved successfully');
+      
+      console.log('✅ Datos guardados exitosamente en Firebase');
+      
+      // Verificar que se guardó correctamente
+      const verification = await db.ref('futbol').once('value');
+      const savedData = verification.val();
+      
+      console.log('🔍 Verificación post-guardado:', {
+        players: savedData.players?.length || 0,
+        matches: savedData.matches?.length || 0
+      });
       
       return {
         statusCode: 200,
         headers,
-        body: JSON.stringify({ success: true })
+        body: JSON.stringify({ 
+          success: true,
+          saved: {
+            players: savedData.players?.length || 0,
+            matches: savedData.matches?.length || 0
+          }
+        })
       };
     }
 
-    // POST /match - Guardar un partido nuevo
-    if (event.httpMethod === 'POST' && path === '/match') {
-      console.log('Saving match to Firebase...');
-      const match = JSON.parse(event.body);
-      const snapshot = await db.ref('futbol/matches').once('value');
-      const matches = snapshot.val() || [];
-      matches.push(match);
-      await db.ref('futbol/matches').set(matches);
-      console.log('Match saved successfully');
-      
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({ success: true })
-      };
-    }
-
-    // DELETE /match/:id - Eliminar un partido
-    if (event.httpMethod === 'DELETE' && path.startsWith('/match/')) {
-      console.log('Deleting match from Firebase...');
-      const matchId = path.split('/')[2];
-      const snapshot = await db.ref('futbol/matches').once('value');
-      const matches = snapshot.val() || [];
-      const filtered = matches.filter(m => m.id !== matchId);
-      await db.ref('futbol/matches').set(filtered);
-      console.log('Match deleted successfully');
-      
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({ success: true })
-      };
-    }
-
-    console.log('Path not found:', path);
+    // Ruta no encontrada
+    console.log('❌ Ruta no encontrada:', path);
     return {
       statusCode: 404,
       headers,
-      body: JSON.stringify({ error: 'Not found', path: path })
+      body: JSON.stringify({ 
+        error: 'Not found', 
+        path: path,
+        method: event.httpMethod
+      })
     };
 
   } catch (error) {
-    console.error('Error in function:', error);
-    console.error('Error stack:', error.stack);
+    console.error('❌ Error en la función:', error);
+    console.error('Stack trace:', error.stack);
     
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({ 
         error: error.message,
-        stack: error.stack,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+        timestamp: new Date().toISOString(),
         env_check: {
           hasProjectId: !!process.env.FIREBASE_PROJECT_ID,
           hasClientEmail: !!process.env.FIREBASE_CLIENT_EMAIL,
-          hasPrivateKey: !!process.env.FIREBASE_PRIVATE_KEY
+          hasPrivateKey: !!process.env.FIREBASE_PRIVATE_KEY,
+          databaseURL: `https://${process.env.FIREBASE_PROJECT_ID}-default-rtdb.firebaseio.com`
         }
       })
     };
