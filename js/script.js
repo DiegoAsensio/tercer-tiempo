@@ -352,11 +352,30 @@ document.addEventListener('DOMContentLoaded', function(){
   // ---- Tabla y Historial -------------------------------------------------
   function computeStats(){
     const stats = new Map(); 
-    data.players.forEach(p=> stats.set(p.id,{id:p.id,name:p.name,pj:0,pg:0}));
+    data.players.forEach(p=> stats.set(p.id,{id:p.id,name:p.name,pj:0,pg:0,pts:0}));
     data.matches.forEach(m=>{ 
+      // Contar partidos jugados
       m.teamA.forEach(id=>{ const s=stats.get(id); if(s) s.pj++; }); 
       m.teamB.forEach(id=>{ const s=stats.get(id); if(s) s.pj++; }); 
-      (m.winner==='A'?m.teamA:m.teamB).forEach(id=>{ const s=stats.get(id); if(s) s.pg++; }); 
+      
+      // Asignar puntos: 3 por victoria, 1 por derrota
+      const winners = m.winner==='A' ? m.teamA : m.teamB;
+      const losers = m.winner==='A' ? m.teamB : m.teamA;
+      
+      winners.forEach(id=>{ 
+        const s=stats.get(id); 
+        if(s) {
+          s.pg++; 
+          s.pts += 3; // 3 puntos por victoria
+        }
+      });
+      
+      losers.forEach(id=>{ 
+        const s=stats.get(id); 
+        if(s) {
+          s.pts += 1; // 1 punto por derrota
+        }
+      });
     });
     return Array.from(stats.values());
   }
