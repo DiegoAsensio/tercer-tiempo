@@ -22,50 +22,43 @@ document.addEventListener('DOMContentLoaded', function(){
   const genId = ()=> (window.crypto && typeof window.crypto.randomUUID==='function' ? window.crypto.randomUUID() : Math.random().toString(36).slice(2));
   const formatDateDMY = (date)=>{ const [y,m,d] = date.split('-'); return `${d}-${m}-${y}` };
   
-  // API URL
-  const API_URL = '/.netlify/functions/api';
+
+  const SHEETDB_URL = 'https://sheetdb.io/api/v1/ukwjhvgcp5ec9';
   
-  // Store con API mejorado
+  // Store con SheetDB
   const store = {
     async read() {
       try {
-        console.log('📡 Leyendo datos de Firebase...');
-        console.log('🔗 URL:', `${API_URL}/data`);
+        console.log('📡 Leyendo datos de SheetDB...');
         
-        const response = await fetch(`${API_URL}/data`, {
+        const response = await fetch(SHEETDB_URL, {
           method: 'GET',
           headers: { 
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-cache'
+            'Accept': 'application/json'
           }
         });
         
-        console.log('📊 Response status:', response.status);
-        
         if (!response.ok) {
-          const errorText = await response.text();
-          console.error('❌ Response error:', errorText);
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        const data = await response.json();
-        console.log('✅ Datos leídos de Firebase:');
-        console.log('  - Players:', data.players?.length || 0);
-        console.log('  - Matches:', data.matches?.length || 0);
+        const rows = await response.json();
+        console.log('✅ Datos leídos:', rows.length, 'filas');
+        
+        // Convertir filas de SheetDB a formato de la app
+        const data = this.parseSheetData(rows);
         
         // Guardar en localStorage como backup
         localStorage.setItem('3t-data', JSON.stringify(data));
         
         return data;
       } catch (error) {
-        console.error('❌ Error leyendo de Firebase:', error);
+        console.error('❌ Error leyendo de SheetDB:', error);
         // Fallback a localStorage
         try {
           const localData = JSON.parse(localStorage.getItem('3t-data') || '{}');
           console.log('📦 Usando datos de localStorage como fallback');
-          console.log('  - Players:', localData.players?.length || 0);
-          console.log('  - Matches:', localData.matches?.length || 0);
-          return localData;
+          return localData.matches ? localData : { players: [], matches: [] };
         } catch (e) {
           console.error('❌ Error leyendo localStorage:', e);
           return { players: [], matches: [] };
@@ -73,51 +66,83 @@ document.addEventListener('DOMContentLoaded', function(){
       }
     },
     
-    async write(d) {
+    parseSheetData(rows) {
+      // Formato esperado en Google Sheets:
+      // Columna A: id
+      // Columna B: date
+      // Columna C: teamA (JSON string con array de IDs)
+      // Columna D: teamB (JSON string con array de IDs)
+      // Columna E: winner
+      
+      const matches = rows.map(row => {
+        try {
+          return {
+            id: row.id || genId(),
+            date: row.date,
+            teamA: JSON.parse(row.teamA || '[]'),
+            teamB: JSON.parse(row.teamB || '[]'),
+            winner: row.winner
+          };
+        } catch (e) {
+          console.error('Error parseando fila:', row, e);
+          return null;
+        }
+      }).filter(m => m !== null);
+      
+      return {
+        players: RAW_PLAYERS.map(p => ({
+          id: genId(),
+          name: p.name,
+          photo: p.photo
+        })),
+        matches
+      };
+    },
+    
+    async write(data) {
       try {
-        console.log('💾 Guardando datos en Firebase...');
-        console.log('🔗 URL:', `${API_URL}/data`);
-        console.log('📝 Datos a enviar:');
-        console.log('  - Players:', d.players?.length || 0);
-        console.log('  - Matches:', d.matches?.length || 0);
+        console.log('💾 Guardando datos en SheetDB...');
         
-        const response = await fetch(`${API_URL}/data`, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(d)
+        // Convertir matches a formato de filas para Google Sheets
+        const rows = data.matches.map(m => ({
+          id: m.id,
+          date: m.date,
+          teamA: JSON.stringify(m.teamA),
+          teamB: JSON.stringify(m.teamB),
+          winner: m.winner
+        }));
+        
+        // Primero, borrar todas las filas existentes
+        await fetch(SHEETDB_URL + '/all', {
+          method: 'DELETE'
         });
         
-        console.log('📊 Response status:', response.status);
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('❌ Response error:', errorText);
-          throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+        // Luego, insertar las nuevas filas
+        if (rows.length > 0) {
+          const response = await fetch(SHEETDB_URL, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(rows)
+          });
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+          }
+          
+          console.log('✅ Guardado exitoso');
         }
         
-        const result = await response.json();
-        console.log('✅ Respuesta de Firebase:', result);
-        
         // Guardar también en localStorage
-        localStorage.setItem('3t-data', JSON.stringify(d));
+        localStorage.setItem('3t-data', JSON.stringify(data));
         
-        // Verificar inmediatamente que se guardó
-        console.log('🔍 Verificando que se guardó correctamente...');
-        const verification = await this.read();
-        console.log('✅ Verificación completada:', {
-          matchesEnviados: d.matches?.length || 0,
-          matchesGuardados: verification.matches?.length || 0,
-          coinciden: d.matches?.length === verification.matches?.length
-        });
-        
-        return result;
+        return { success: true };
       } catch (error) {
-        console.error('❌ Error guardando en Firebase:', error);
-        console.error('Stack:', error.stack);
+        console.error('❌ Error guardando en SheetDB:', error);
         // Guardar en localStorage al menos
-        localStorage.setItem('3t-data', JSON.stringify(d));
+        localStorage.setItem('3t-data', JSON.stringify(data));
         throw error;
       }
     }
@@ -132,15 +157,13 @@ document.addEventListener('DOMContentLoaded', function(){
     try {
       console.log('🚀 Iniciando carga de datos...');
       
-      // Intentar cargar desde Firebase primero
-      const firebaseData = await store.read();
+      const loadedData = await store.read();
       
-      if (firebaseData && firebaseData.players) {
-        console.log('✅ Datos cargados desde Firebase');
-        data = firebaseData;
+      if (loadedData && loadedData.players) {
+        console.log('✅ Datos cargados');
+        data = loadedData;
       } else {
-        console.log('⚠️ Firebase vacío, inicializando con jugadores por defecto');
-        // Firebase vacío, inicializar con RAW_PLAYERS
+        console.log('⚠️ Inicializando con jugadores por defecto');
         data = { 
           players: RAW_PLAYERS.map(p=>({ 
             id: genId(), 
@@ -149,33 +172,6 @@ document.addEventListener('DOMContentLoaded', function(){
           })), 
           matches: [] 
         };
-        
-        // Subir datos iniciales a Firebase
-        await store.write(data);
-        console.log('✅ Datos iniciales subidos a Firebase');
-      }
-      
-      // Sincronizar jugadores con RAW_PLAYERS (por si hay nuevos)
-      let updated = false;
-      RAW_PLAYERS.forEach(rawPlayer => {
-        const exists = data.players.find(p => p.name === rawPlayer.name);
-        if (!exists) {
-          data.players.push({
-            id: genId(),
-            name: rawPlayer.name,
-            photo: rawPlayer.photo
-          });
-          updated = true;
-        } else if (exists.photo !== rawPlayer.photo) {
-          exists.photo = rawPlayer.photo;
-          updated = true;
-        }
-      });
-      
-      if (updated) {
-        data.players.sort((a, b) => a.name.localeCompare(b.name, 'es'));
-        await store.write(data);
-        console.log('✅ Jugadores actualizados');
       }
       
       data.players.forEach(p => teamStates[p.id] = 'none');
@@ -186,7 +182,6 @@ document.addEventListener('DOMContentLoaded', function(){
       
     } catch (error) {
       console.error('❌ Error crítico cargando datos:', error);
-      // Fallback: inicializar con RAW_PLAYERS
       data = { 
         players: RAW_PLAYERS.map(p=>({ 
           id: genId(), 
@@ -201,7 +196,7 @@ document.addEventListener('DOMContentLoaded', function(){
     }
   }
 
-  // Auto-refresh cada 10 segundos (aumentado para no saturar)
+  // Auto-refresh cada 30 segundos
   let refreshInterval = setInterval(async () => {
     try {
       const newData = await store.read();
@@ -214,7 +209,7 @@ document.addEventListener('DOMContentLoaded', function(){
     } catch (error) {
       console.error('❌ Error en auto-refresh:', error);
     }
-  }, 10000);
+  }, 30000);
 
   // ---- DnD y Render del Pool --------------------------------------------
   function getTeamStatus(playerId) {
@@ -383,11 +378,9 @@ document.addEventListener('DOMContentLoaded', function(){
     const stats = new Map(); 
     data.players.forEach(p=> stats.set(p.id,{id:p.id,name:p.name,pj:0,pg:0,pts:0}));
     data.matches.forEach(m=>{ 
-      // Contar partidos jugados
       m.teamA.forEach(id=>{ const s=stats.get(id); if(s) s.pj++; }); 
       m.teamB.forEach(id=>{ const s=stats.get(id); if(s) s.pj++; }); 
       
-      // Asignar puntos: 3 por victoria, 1 por derrota
       const winners = m.winner==='A' ? m.teamA : m.teamB;
       const losers = m.winner==='A' ? m.teamB : m.teamA;
       
@@ -395,14 +388,14 @@ document.addEventListener('DOMContentLoaded', function(){
         const s=stats.get(id); 
         if(s) {
           s.pg++; 
-          s.pts += 3; // 3 puntos por victoria
+          s.pts += 3;
         }
       });
       
       losers.forEach(id=>{ 
         const s=stats.get(id); 
         if(s) {
-          s.pts += 1; // 1 punto por derrota
+          s.pts += 1;
         }
       });
     });
