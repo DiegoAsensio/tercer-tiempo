@@ -377,23 +377,32 @@ document.addEventListener('DOMContentLoaded', function(){
       m.teamA.forEach(id=>{ const s=stats.get(id); if(s) s.pj++; }); 
       m.teamB.forEach(id=>{ const s=stats.get(id); if(s) s.pj++; }); 
       
-      const winners = m.winner==='A' ? m.teamA : m.teamB;
-      const losers = m.winner==='A' ? m.teamB : m.teamA;
-      
-      winners.forEach(id=>{ 
-        const s=stats.get(id); 
-        if(s) {
-          s.pg++; 
-          s.pts += 3;
-        }
-      });
-      
-      losers.forEach(id=>{ 
-        const s=stats.get(id); 
-        if(s) {
-          s.pts += 1;
-        }
-      });
+      if (m.winner === 'DRAW') {
+        // Empate: 2 puntos para todos
+        [...m.teamA, ...m.teamB].forEach(id=>{ 
+          const s=stats.get(id); 
+          if(s) s.pts += 2;
+        });
+      } else {
+        // Victoria/Derrota: 3 puntos ganadores, 1 punto perdedores
+        const winners = m.winner==='A' ? m.teamA : m.teamB;
+        const losers = m.winner==='A' ? m.teamB : m.teamA;
+        
+        winners.forEach(id=>{ 
+          const s=stats.get(id); 
+          if(s) {
+            s.pg++; 
+            s.pts += 3;
+          }
+        });
+        
+        losers.forEach(id=>{ 
+          const s=stats.get(id); 
+          if(s) {
+            s.pts += 1;
+          }
+        });
+      }
     });
     return Array.from(stats.values());
   }
@@ -434,10 +443,11 @@ document.addEventListener('DOMContentLoaded', function(){
     const wrap = $('#historial');
     if(!data.matches.length){ wrap.innerHTML = `<p class='empty'>Sin registros aún.</p>`; return; }
     wrap.innerHTML = data.matches.slice().sort((a,b)=>a.date<b.date?1:-1).map(m=>{
+      const isDraw = m.winner === 'DRAW';
       const winnerA = m.winner==='A';
       const teamAAv = miniTeam(m.teamA);
       const teamBAv = miniTeam(m.teamB);
-      const headerPill = winnerA ? `Ganó Pechera 🏆` : `Ganó Sin pechera 🏆`;
+      const headerPill = isDraw ? `Empate 🤝` : (winnerA ? `Ganó Pechera 🏆` : `Ganó Sin pechera 🏆`);
       const deleteBtn = isAdminMode ? `<button class='btn danger eliminar-btn' data-id='${m.id}' style='font-size:0.85rem;padding:8px 12px'>Eliminar</button>` : '';
       return `<div class='card' style='margin-bottom:12px'><div class='content'>
         <div class='row' style='justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px'>
@@ -452,8 +462,8 @@ document.addEventListener('DOMContentLoaded', function(){
             <div class='avatars'>${teamAAv}</div>
           </div>
           <div class='vs'>VS</div>
-          <div class='teamBox ${!winnerA?"win":""}'>
-            <div class='badge badgeB'><span class='dot'></span> Sin pechera ${!winnerA?"<span class='trophy'>🏆</span>":""}</div>
+          <div class='teamBox ${!winnerA && !isDraw?"win":""}'>
+            <div class='badge badgeB'><span class='dot'></span> Sin pechera ${!winnerA && !isDraw?"<span class='trophy'>🏆</span>":""}</div>
             <div class='avatars'>${teamBAv}</div>
           </div>
         </div>
@@ -471,7 +481,7 @@ document.addEventListener('DOMContentLoaded', function(){
       return;
     }
     if(!winner){
-      alert('Seleccioná el ganador');
+      alert('Seleccioná el resultado');
       return;
     }
     
