@@ -13,7 +13,8 @@ document.addEventListener('DOMContentLoaded', function(){
     { name: 'Nahue', photo: 'img/nahue.jpg' },
     { name: 'Sean', photo: 'img/sean.jpg' },
     { name: 'Tadeo', photo: 'img/tadeo.jpg' },
-    { name: 'Tomi', photo: 'img/tomi.jpg' }
+    { name: 'Tomi', photo: 'img/tomi.jpg' },
+    { name: 'Valen', photo: 'img/valen.jpg' }
   ].sort((a,b)=>a.name.localeCompare(b.name,'es'));
   // ================================================================
 
